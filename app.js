@@ -1,14 +1,13 @@
-const express = require('express');
+/* const express = require('express');
 const bcryptjs = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const cors = require('cors');
-
+const http = require('http');
 const io = require('socket.io')(8080, {
     cors: {
-        origin: 'http://localhost:3000',
+        origin: '*',
     }
 });
-
 
 // Import Files
 const Users = require('./models/User');
@@ -16,12 +15,10 @@ const Conversations = require('./models/Conversations');
 const Messages = require('./models/Messages');
 
 // app Use
-
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use(cors());
-
 
 
 // Socket.io 
@@ -66,7 +63,75 @@ io.on('connection', socket => {
         io.emit('getUsers', users);
     });
     // io.emit('getUsers', socket.userId);
+}); */
+
+
+
+const express = require('express');
+const bcryptjs = require('bcryptjs');
+const jwt = require('jsonwebtoken');
+const cors = require('cors');
+const mongoose = require('mongoose');
+const http = require('http');
+const { Server } = require('socket.io');
+
+// Initialize Express App and Server
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*',
+    }
 });
+
+// Import Models (Assuming models are defined correctly with mongoose)
+const Users = require('./models/User');
+const Conversations = require('./models/Conversations');
+const Messages = require('./models/Messages');
+
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: false }));
+app.use(cors());
+
+// Socket.io Logic
+let users = [];
+io.on('connection', (socket) => {
+    console.log('User connected', socket.id);
+
+    socket.on('addUser', (userId) => {
+        const isUserExist = users.find(user => user.userId === userId);
+        if (!isUserExist) {
+            users.push({ userId, socketId: socket.id });
+            io.emit('getUsers', users);
+        }
+    });
+
+    socket.on('sendMessage', async ({ senderId, receiverId, message, conversationId }) => {
+        const receiver = users.find(user => user.userId === receiverId);
+        const sender = users.find(user => user.userId === senderId);
+        const user = await Users.findById(senderId);
+        console.log('sender :>> ', sender, receiver);
+
+        const payload = {
+            senderId, message, conversationId, receiverId,
+            user: { id: user._id, fullName: user.fullName, email: user.email }
+        };
+
+        if (receiver) {
+            io.to(receiver.socketId).to(sender.socketId).emit('getMessage', payload);
+        } else {
+            io.to(sender.socketId).emit('getMessage', payload);
+        }
+    });
+
+    socket.on('disconnect', () => {
+        users = users.filter(user => user.socketId !== socket.id);
+        io.emit('getUsers', users);
+    });
+});
+
+
 
 // Routes
 app.get('/', (req, res) => {
